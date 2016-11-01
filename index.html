@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta name="viewport" content="initial-scale=1.0, user-scalable=no">
+    <meta charset="utf-8">
+    <title>Cherrywood Interactive Masterplan prototype</title>
+    <style>
+      html, body {
+        height: 100%;
+        margin: 0;
+        padding: 0;
+      }
+      #map {
+        height: 100%;
+      }
+    </style>
+    <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyDUVpf11-wg65FipQLf06bx9Pshk9KGUog"></script>
+    <script>
+var map = null;
+var markers = [];
+  var overlay;
+  CherryOverlay.prototype = new google.maps.OverlayView();
+
+  // Initialize the map and the custom overlay.
+
+  function initMap() {
+    var Latlng = {lat: 53.245630, lng: -6.149645};
+
+    var mapProp = {
+      zoom: 15,
+      center: Latlng,
+      mapTypeId:google.maps.MapTypeId.ROAD,
+    };
+
+    //create map variable with properties
+    map = new google.maps.Map(document.getElementById("map"), mapProp);
+
+    //create new data layer
+    var geoLayer = new google.maps.Data();
+
+    geoLayer.loadGeoJson(
+      'map.geojson'
+    );
+    geoLayer.setMap(map);
+
+    geoLayer.setStyle(function(feature) {
+      var stroke = feature.getProperty('strokeColor') || '#ffffff';
+      var fill = feature.getProperty('fillColor') || '#ffffff';
+      return {
+        strokeColor: stroke,
+        fillColor: fill,
+        strokeWeight: 2
+      };
+    });
+
+    var bounds = new google.maps.LatLngBounds(
+        new google.maps.LatLng(53.234071, -6.181263),
+        new google.maps.LatLng(53.257171, -6.126637));
+
+    // The photograph is courtesy of the U.S. Geological Survey.
+    var srcImage = 'overlays/temp_overlay_1.svg';
+    var srcImage2 = 'overlays/temp_overlay_2.svg';
+    var srcImage3 = 'overlays/temp_overlay_3.svg';
+    // var srcImage = 'overlays/svg_overlays.svg';
+    var srcImage4 = 'overlays/masterplan_for_maptiler-dev.png';
+
+    // The custom CherryOverlay object contains the Cherry image,
+    // the bounds of the image, and a reference to the map.
+    overlay4 = new CherryOverlay(bounds, srcImage4, map);
+
+    /* May not be needed!
+    overlay = new CherryOverlay(bounds, srcImage, map);
+    overlay2 = new CherryOverlay(bounds, srcImage2, map);
+    overlay3 = new CherryOverlay(bounds, srcImage3, map);
+    */
+
+    geoLayer.addListener('click', function(event) {
+      // LocalMarkers is an array of LatLng to feed into the marker creator
+      var localMarkers = event.feature.getProperty('markers');
+
+      if(!localMarkers)
+        return false;
+      // Setup new bounds
+      var markerBounds = new google.maps.LatLngBounds();
+
+      // Hide the data layer
+      geoLayer.setMap(null);
+
+      for(var i = 0; i < localMarkers.length; i++) {
+        var marker = new google.maps.Marker({
+          position: new google.maps.LatLng(localMarkers[i][1], localMarkers[i][0]),
+          map: map,
+          title: 'Marker'
+        });
+        // Push markers onto a global var so we can destroy them later
+        markers.push(marker);
+        // Push markerBounds
+        markerBounds.extend(marker.getPosition());
+      }
+
+      //if multiple markers fit bounds, if 1 set center
+      if(markers.length > 1) {
+        map.fitBounds(markerBounds);
+      } else {
+        map.setCenter(markerBounds.getCenter());
+        map.setZoom(16);
+      }
+
+      google.maps.event.addListenerOnce(map, 'zoom_changed', function () {
+        if(map.getZoom() < 18 && markers.length > 0) {
+          destroyMarkers();
+          // Set Zoom before Set center or weird things occur!
+          map.setZoom(15);
+          map.setCenter(Latlng);
+          geoLayer.setMap(map);
+        }
+      });
+
+    });
+
+
+
+  }
+
+  function destroyMarkers() {
+    // Destroy markers by hiding them from the map
+    for(var i = 0; i < markers.length; i++) {
+      markers[i].setMap(null);
+    }
+    // Now clear the storage array
+    markers = [];
+  }
+
+
+  /** @constructor */
+  function CherryOverlay(bounds, image, map) {
+
+    // Initialize all properties.
+    this.bounds_ = bounds;
+    this.image_ = image;
+    this.map_ = map;
+
+    // Define a property to hold the image's div. We'll
+    // actually create this div upon receipt of the onAdd()
+    // method so we'll leave it null for now.
+    this.div_ = null;
+
+    // Explicitly call setMap on this overlay.
+    this.setMap(map);
+  }
+
+  /**
+   * onAdd is called when the map's panes are ready and the overlay has been
+   * added to the map.
+   */
+  CherryOverlay.prototype.onAdd = function() {
+
+    var div = document.createElement('div');
+    div.style.borderStyle = 'none';
+    div.style.borderWidth = '0px';
+    div.style.position = 'absolute';
+
+    // Create the img element and attach it to the div.
+    var img = document.createElement('img');
+    img.src = this.image_;
+    img.style.width = '100%';
+    img.style.height = '100%';
+    img.style.position = 'absolute';
+    div.appendChild(img);
+
+    this.div_ = div;
+
+    // Add the element to the "overlayLayer" pane.
+    // ^^ Can't add to the "overlayLayer" as it no longer accepts mouse events
+    // Add to the overlayMouseTarget instead...
+    var panes = this.getPanes();
+    panes.overlayLayer.appendChild(div);
+
+  };
+
+  CherryOverlay.prototype.draw = function() {
+
+    // We use the south-west and north-east
+    // coordinates of the overlay to peg it to the correct position and size.
+    // To do this, we need to retrieve the projection from the overlay.
+    var overlayProjection = this.getProjection();
+
+    // Retrieve the south-west and north-east coordinates of this overlay
+    // in LatLngs and convert them to pixel coordinates.
+    // We'll use these coordinates to resize the div.
+    var sw = overlayProjection.fromLatLngToDivPixel(this.bounds_.getSouthWest());
+    var ne = overlayProjection.fromLatLngToDivPixel(this.bounds_.getNorthEast());
+
+    // Resize the image's div to fit the indicated dimensions.
+    var div = this.div_;
+    div.style.left = sw.x + 'px';
+    div.style.top = ne.y + 'px';
+    div.style.width = (ne.x - sw.x) + 'px';
+    div.style.height = (sw.y - ne.y) + 'px';
+  };
+
+  // The onRemove() method will be called automatically from the API if
+  // we ever set the overlay's map property to 'null'.
+  CherryOverlay.prototype.onRemove = function() {
+    this.div_.parentNode.removeChild(this.div_);
+    this.div_ = null;
+  };
+
+  google.maps.event.addDomListener(window, 'load', initMap);
+
+    </script>
+  </head>
+  <body>
+    <div id="map"></div>
+  </body>
+</html>
